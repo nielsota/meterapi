@@ -5,12 +5,27 @@ import boto3
 from sqlmodel import Session, create_engine
 
 from meterapi.config import get_settings
-from meterapi.models import DBCredentials 
+from meterapi.models import DBCredentials
 
 
 @lru_cache(maxsize=1)
 def _credentials() -> DBCredentials:
     settings = get_settings()
+
+    if settings.db_host and settings.db_user and settings.db_password:
+        return DBCredentials(
+            user=settings.db_user,
+            password=settings.db_password,
+            host=settings.db_host,
+            database=settings.db_name,
+            port=settings.db_port,
+        )
+
+    if not settings.db_secret_arn:
+        raise RuntimeError(
+            "No DB credentials configured: set DB_HOST/DB_USER/DB_PASSWORD or DB_SECRET_ARN"
+        )
+
     client = boto3.client("secretsmanager", region_name=settings.aws_region)
     resp = client.get_secret_value(SecretId=settings.db_secret_arn)
     return DBCredentials.model_validate(json.loads(resp["SecretString"]))
