@@ -1,40 +1,35 @@
 import logging
+from collections.abc import AsyncIterator
+from contextlib import asynccontextmanager
 
-from fastapi import Depends, FastAPI
-from sqlmodel import Session
+from fastapi import FastAPI
 
-from meterapi.models import MeterLastValueRequest, MeterLastValueResponse, get_session
-from meterapi.services.dbservice import MeterRepository
-
-
-def get_meter_repository(
-    session: Session = Depends(get_session),
-) -> MeterRepository:
-    return MeterRepository(session)
-
+from meterapi.app.routers import (
+    complexes,
+    connections,
+    health,
+    measurements,
+    meters,
+)
+from meterapi.config import Settings
+from meterapi.db import create_engine_from_settings
 
 logging.basicConfig(level=logging.INFO)
 logger = logging.getLogger(__name__)
 
-app = FastAPI(title="Meters API")
+
+@asynccontextmanager
+async def lifespan(app: FastAPI) -> AsyncIterator[None]:
+    settings = Settings()
+    app.state.settings = settings
+    app.state.engine = create_engine_from_settings(settings)
+    try:
+        yield
+    finally:
+        app.state.engine.dispose()
 
 
-@app.get("/health")
-def health() -> dict:
-    return {"status": "ok"}
+app = FastAPI(title="Meters API", lifespan=lifespan)
 
-
-@app.get("/meters/last-values", response_model=list[MeterLastValueResponse])
-def last_values(
-    params: MeterLastValueRequest = Depends(),
-    repository: MeterRepository = Depends(get_meter_repository),
-) -> list[MeterLastValueResponse]:
-    values = repository.get_last_meter_values(
-        connection_id=params.connection_id,
-        meter_type=params.meter_type,
-    )
-    logger.info(
-        "Returned %d last values for connection %d, type %s",
-        len(values), params.connection_id, params.meter_type,
-    )
-    return values
+for r in (health, complexes, connections, meters, measurements):
+    app.include_router(r.router)
