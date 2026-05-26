@@ -1,10 +1,8 @@
-from functools import lru_cache
-
 from pydantic_settings import BaseSettings, SettingsConfigDict
 
 
 class Settings(BaseSettings):
-    model_config = SettingsConfigDict(env_file=".env", extra="ignore")
+    model_config = SettingsConfigDict(env_file=".env", extra="ignore", frozen=True)
 
     aws_region: str = "eu-central-1"
 
@@ -15,8 +13,3 @@ class Settings(BaseSettings):
     db_password: str | None = None
     db_name: str = "postgres"
     db_port: int = 5432
-
-
-@lru_cache(maxsize=1)
-def get_settings() -> Settings:
-    return Settings()

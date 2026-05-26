@@ -1,5 +1,8 @@
 from pydantic import BaseModel, Field
 
+__all__ = ["DBCredentials"]
+
+
 class DBCredentials(BaseModel):
     user: str = Field(alias="username")
     password: str
@@ -7,4 +10,4 @@ class DBCredentials(BaseModel):
     database: str = Field(default="postgres", alias="dbname")
     port: int = 5432
 
-    model_config = {"populate_by_name": True}
+    model_config = {"populate_by_name": True, "frozen": True}
