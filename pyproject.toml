@@ -15,7 +15,11 @@ dependencies = [
     "pydantic-settings>=2.14.1",
     "python-dotenv>=1.2.2",
     "sqlmodel>=0.0.38",
+    "typer>=0.25.1",
 ]
+
+[project.scripts]
+meterapi = "meterapi.cli.main:app"
 
 [build-system]
 requires = ["hatchling"]

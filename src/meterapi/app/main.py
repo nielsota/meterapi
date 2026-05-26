@@ -3,7 +3,7 @@ import logging
 from fastapi import Depends, FastAPI
 from sqlmodel import Session
 
-from meterapi.models import MeterLastValue, RequestParams, get_session
+from meterapi.models import MeterLastValueRequest, MeterLastValueResponse, get_session
 from meterapi.services.dbservice import MeterRepository
 
 
@@ -24,11 +24,11 @@ def health() -> dict:
     return {"status": "ok"}
 
 
-@app.get("/meters/last-values", response_model=list[MeterLastValue])
+@app.get("/meters/last-values", response_model=list[MeterLastValueResponse])
 def last_values(
-    params: RequestParams = Depends(),
+    params: MeterLastValueRequest = Depends(),
     repository: MeterRepository = Depends(get_meter_repository),
-) -> list[MeterLastValue]:
+) -> list[MeterLastValueResponse]:
     values = repository.get_last_meter_values(
         connection_id=params.connection_id,
         meter_type=params.meter_type,

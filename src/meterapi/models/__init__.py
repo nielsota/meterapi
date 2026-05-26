@@ -1,4 +1,4 @@
-from meterapi.models.api import MeterLastValue, RequestParams
+from meterapi.models.api import MeterLastValueResponse, MeterLastValueRequest
 from meterapi.models.creds import DBCredentials
 from meterapi.models.db import (
     Complex,
@@ -20,7 +20,7 @@ __all__ = [
     "Meter",
     "MeterCommunicationProtocol",
     "MeterInstallation",
-    "MeterLastValue",
-    "RequestParams",
+    "MeterLastValueResponse",
+    "MeterLastValueRequest",
     "Room",
 ]

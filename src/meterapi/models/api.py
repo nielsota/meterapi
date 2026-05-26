@@ -1,8 +1,6 @@
-from fastapi import Query
-from pydantic import BaseModel
+from pydantic import BaseModel, Field
 
-
-class MeterLastValue(BaseModel):
+class MeterLastValueResponse(BaseModel):
     type: str | None = None
     serial: str | None = None
     room: str | None = None
@@ -10,9 +8,6 @@ class MeterLastValue(BaseModel):
     unit: str | None = None
 
 
-class RequestParams(BaseModel):
-    """Query parameters for /meters/last-values, bundled so helpers receive one object."""
-    connection_id: int = Query(..., alias="connectionId", description="connection.c_id")
-    meter_type: str = Query(..., alias="meterType", description="installation_location.goal — e.g. WKV, WARM, KOUD")
-
-    model_config = {"populate_by_name": True}
+class MeterLastValueRequest(BaseModel):
+    connection_id: int = Field(..., alias="connectionId", description="connection.c_id")
+    meter_type: str = Field(..., alias="meterType", description="installation_location.goal — e.g. WKV, WARM, KOUD")
