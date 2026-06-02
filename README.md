@@ -26,3 +26,20 @@ DB credentials are pulled from AWS Secrets Manager at startup:
 uv sync
 uv run uvicorn meterapi.app.main:app --reload
 ```
+
+## Docker (local or AWS App Runner)
+
+Build and run locally (defaults to port **8000**):
+
+```bash
+docker build -t meterapi .
+docker run --rm -p 8000:8000 --env-file .env meterapi
+```
+
+App Runner injects **`PORT`**; the image listens on `0.0.0.0` and uses `${PORT:-8000}`. For an `linux/amd64` service from an Apple Silicon machine:
+
+```bash
+docker build --platform linux/amd64 -t meterapi .
+```
+
+Configure the service health check to hit **`/health`** (or a dedicated liveness path your team prefers).

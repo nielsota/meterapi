@@ -1,0 +1,12 @@
+services:
+  api:
+    build: .
+    image: meterapi:local
+    ports:
+      - "8000:8000"
+    # DB_* / DB_SECRET_ARN / AWS_REGION come from .env (same vars as local + App Runner).
+    env_file:
+      - .env
+    environment:
+      PORT: "8000"
+    restart: unless-stopped
