@@ -1,64 +1,74 @@
 from fastapi import APIRouter, Depends, HTTPException, Query
 
+from meterapi.app._responses import NOT_FOUND, VALIDATION_ERROR
 from meterapi.app.dependencies import get_repository
 from meterapi.db import Repository
 from meterapi.models.api import (
     ComplexResponse,
     ConnectionResponse,
-    ErrorResponse,
     MeterResponse,
+    Page,
 )
 
 router = APIRouter(prefix="/complexes", tags=["complexes"])
 
-NOT_FOUND = {404: {"model": ErrorResponse}}
+_LIST_AND_NOT_FOUND = {**NOT_FOUND, **VALIDATION_ERROR}
 
 
-@router.get("", response_model=list[ComplexResponse])
+@router.get("", response_model=Page[ComplexResponse], responses=VALIDATION_ERROR)
 def list_complexes(
     limit: int = Query(100, ge=1, le=500),
     offset: int = Query(0, ge=0),
     repo: Repository = Depends(get_repository),
-) -> list[ComplexResponse]:
-    return [
-        ComplexResponse.model_validate(c)
-        for c in repo.list_complexes(limit=limit, offset=offset)
-    ]
+) -> Page[ComplexResponse]:
+    items = repo.list_complexes(limit=limit, offset=offset)
+    return Page[ComplexResponse](
+        items=[ComplexResponse.model_validate(c) for c in items],
+        total=repo.count_complexes(),
+        limit=limit,
+        offset=offset,
+    )
 
 
 @router.get(
-    "/{c_id}/connections",
-    response_model=list[ConnectionResponse],
-    responses=NOT_FOUND,
+    "/{complex_id}/connections",
+    response_model=Page[ConnectionResponse],
+    responses=_LIST_AND_NOT_FOUND,
 )
 def list_connections_for_complex(
-    c_id: int,
+    complex_id: int,
     limit: int = Query(100, ge=1, le=500),
     offset: int = Query(0, ge=0),
     repo: Repository = Depends(get_repository),
-) -> list[ConnectionResponse]:
-    if repo.get_complex(c_id) is None:
-        raise HTTPException(status_code=404, detail=f"complex {c_id} not found")
-    return [
-        ConnectionResponse.model_validate(c)
-        for c in repo.list_connections_for_complex(c_id, limit=limit, offset=offset)
-    ]
+) -> Page[ConnectionResponse]:
+    if repo.get_complex(complex_id) is None:
+        raise HTTPException(status_code=404, detail=f"complex {complex_id} not found")
+    items = repo.list_connections_for_complex(complex_id, limit=limit, offset=offset)
+    return Page[ConnectionResponse](
+        items=[ConnectionResponse.model_validate(c) for c in items],
+        total=repo.count_connections_for_complex(complex_id),
+        limit=limit,
+        offset=offset,
+    )
 
 
 @router.get(
-    "/{c_id}/meters",
-    response_model=list[MeterResponse],
-    responses=NOT_FOUND,
+    "/{complex_id}/meters",
+    response_model=Page[MeterResponse],
+    responses=_LIST_AND_NOT_FOUND,
 )
 def list_meters_for_complex(
-    c_id: int,
+    complex_id: int,
     limit: int = Query(100, ge=1, le=500),
     offset: int = Query(0, ge=0),
     repo: Repository = Depends(get_repository),
-) -> list[MeterResponse]:
-    if repo.get_complex(c_id) is None:
-        raise HTTPException(status_code=404, detail=f"complex {c_id} not found")
-    return [
-        MeterResponse.model_validate(m)
-        for m in repo.list_meters_for_complex(c_id, limit=limit, offset=offset)
-    ]
+) -> Page[MeterResponse]:
+    if repo.get_complex(complex_id) is None:
+        raise HTTPException(status_code=404, detail=f"complex {complex_id} not found")
+    items = repo.list_meters_for_complex(complex_id, limit=limit, offset=offset)
+    return Page[MeterResponse](
+        items=[MeterResponse.model_validate(m) for m in items],
+        total=repo.count_meters_for_complex(complex_id),
+        limit=limit,
+        offset=offset,
+    )

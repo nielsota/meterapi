@@ -4,7 +4,6 @@ from sqlalchemy import (
     CheckConstraint,
     Enum,
     Index,
-    SmallInteger,
     UniqueConstraint,
 )
 from sqlmodel import Field, Relationship, SQLModel
@@ -66,7 +65,7 @@ class Meter(SQLModel, table=True):
     )
     offset: float = 0
     scale: float = 1
-    due_date_month: int | None = Field(None, sa_type=SmallInteger)
+    due_date_month: int | None = None
 
     meter_installation: list["MeterInstallation"] = Relationship(back_populates="meter")
     energy_measurement: list["EnergyMeasurement"] = Relationship(back_populates="meter")

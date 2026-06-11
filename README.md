@@ -4,14 +4,36 @@ FastAPI service that returns the latest energy-meter readings from the Postgres 
 
 ## Layout
 
-- `src/meterapi/models/` — SQLModel ORM tables (`db.py`), Pydantic API schemas (`api.py`), and the DB session factory. Everything is re-exported from the package root.
-- `src/meterapi/services/dbservice.py` — `MeterRepository`, the database-operations class. Takes a `Session` and exposes query methods that accept primitive arguments (no request shapes).
-- `src/meterapi/app/main.py` — FastAPI app, routes, and the `MeterRepository` dependency.
+- `src/meterapi/models/` — SQLModel ORM tables (`db.py`) and Pydantic API schemas (`api.py`). API schemas extend `ApiModel` (camelCase JSON, `from_attributes`). Everything is re-exported from the package root.
+- `src/meterapi/db/` — `Repository` (composed from per-resource mixins in `db/mixins/`) plus the session/engine factory. Query methods accept primitive arguments (no request shapes).
+- `src/meterapi/app/` — FastAPI app (`main.py`), routers (`routers/`), global exception handlers (`errors.py`), and shared helpers (`_responses.py`, `_time.py`).
 
 ## Endpoints
 
-- `GET /health` — liveness probe.
-- `GET /meters/last-values?connectionId={int}&meterType={str}` — most recent value per meter for a given connection and installation goal (e.g. `WKV`, `WARM`, `KOUD`).
+Infra (unversioned):
+
+- `GET /health` — process liveness; does **not** touch the database.
+- `GET /ready` — readiness; returns `503` when the database is unreachable.
+
+Data API (all under `/v1`, paginated list responses use the `Page` envelope):
+
+- `GET /v1/complexes` — list complexes.
+- `GET /v1/complexes/{complex_id}/connections` — connections for a complex.
+- `GET /v1/complexes/{complex_id}/meters` — active meters for a complex.
+- `GET /v1/connections/{connection_id}/rooms` — rooms for a connection.
+- `GET /v1/meters/stale?hours={1..8760}` — meters with no recent readings.
+- `GET /v1/meters/{serial_number}` — meter detail incl. last reading.
+- `GET /v1/measurements?serial_number={str}&from={iso}&to={iso}&measurement_type={str}` — raw measurements.
+- `GET /v1/measurements/aggregate?serial_number={str}&grain={day|month}&from={iso}&to={iso}` — bucketed aggregates.
+
+## API conventions
+
+- **Versioning**: data endpoints live under `/v1`. Infra probes (`/health`, `/ready`) are unversioned.
+- **JSON casing**: response bodies are **camelCase** (e.g. `dueDate`, `serialNumber`, `complexId`). A resource's own primary key is `id`; foreign keys are qualified (`complexId`, `connectionId`).
+- **Path & query params**: **snake_case** (`/v1/complexes/{complex_id}`, `?serial_number=...`).
+- **Pagination**: list endpoints return `{ "items": [...], "total": <int>, "limit": <int>, "offset": <int> }`. `limit` is `1..500` (default 100), `offset` `>= 0` (default 0).
+- **Time windows**: `from`/`to` are ISO-8601, interpreted as the half-open interval `[from, to)`. Naive datetimes are assumed UTC. Defaults: `to = now`, `from = now - 7d`. `from > to` yields `400`.
+- **Errors**: error bodies are `{ "detail": <string> }`. `404` for missing resources, `400` for bad ranges, `422` for request validation (FastAPI's native shape), `503` when the database is unreachable.
 
 ## Configuration
 

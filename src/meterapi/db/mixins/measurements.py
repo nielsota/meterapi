@@ -32,10 +32,30 @@ class MeasurementMixin(_RepoBase):
         if measurement_type is not None:
             stmt = stmt.where(EnergyMeasurement.measurement_type == measurement_type)
         stmt = (
-            stmt.order_by(EnergyMeasurement.value_time.desc())
+            stmt.order_by(
+                EnergyMeasurement.value_time.desc(),
+                EnergyMeasurement.energy_measurement_id.desc(),
+            )
             .limit(limit).offset(offset)
         )
         return list(self.session.exec(stmt).all())
+
+    def count_measurements(
+        self, *, serial: str, from_: datetime, to: datetime,
+        measurement_type: str | None,
+    ) -> int:
+        stmt = (
+            select(func.count())
+            .select_from(EnergyMeasurement)
+            .where(
+                EnergyMeasurement.serial_number == serial,
+                EnergyMeasurement.value_time >= from_,
+                EnergyMeasurement.value_time < to,
+            )
+        )
+        if measurement_type is not None:
+            stmt = stmt.where(EnergyMeasurement.measurement_type == measurement_type)
+        return self.session.exec(stmt).one()
 
     def aggregate_measurements(
         self, *, serial: str, grain: Grain,
