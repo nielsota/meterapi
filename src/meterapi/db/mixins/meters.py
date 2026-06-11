@@ -31,24 +31,42 @@ class StaleMeterRow:
 
 
 class MeterMixin(_RepoBase):
-    def list_meters_for_complex(
-        self, c_id: int, *, limit: int, offset: int,
-    ) -> list[Meter]:
-        active_meter_ids = (
+    def _active_meter_ids_for_complex(self, complex_id: int):
+        return (
             select(MeterInstallation.meter_id)
             .where(MeterInstallation.removal_time.is_(None))
             .join(InstallationLocation, InstallationLocation.il_id == MeterInstallation.installation_location_id)
             .join(Room, Room.r_id == InstallationLocation.room_id)
             .join(Connection, Connection.c_id == Room.connection_id)
-            .where(Connection.complex_id == c_id)
+            .where(Connection.complex_id == complex_id)
         )
+
+    def list_meters_for_complex(
+        self, complex_id: int, *, limit: int, offset: int,
+    ) -> list[Meter]:
         stmt = (
             select(Meter)
-            .where(Meter.m_id.in_(active_meter_ids))
+            .where(Meter.m_id.in_(self._active_meter_ids_for_complex(complex_id)))
             .order_by(Meter.m_id)
             .limit(limit).offset(offset)
         )
         return list(self.session.exec(stmt).all())
+
+    def count_meters_for_complex(self, complex_id: int) -> int:
+        stmt = (
+            select(func.count())
+            .select_from(Meter)
+            .where(Meter.m_id.in_(self._active_meter_ids_for_complex(complex_id)))
+        )
+        return self.session.exec(stmt).one()
+
+    def meter_exists(self, serial_number: str) -> bool:
+        stmt = (
+            select(func.count())
+            .select_from(Meter)
+            .where(Meter.serial_number == serial_number)
+        )
+        return self.session.exec(stmt).one() > 0
 
     def get_meter_by_serial(self, serial: str) -> MeterDetail | None:
         meter = self.session.exec(
@@ -109,3 +127,19 @@ class MeterMixin(_RepoBase):
             StaleMeterRow(m_id=r[0], serial_number=r[1], last_value_time=r[2])
             for r in rows
         ]
+
+    def count_stale_meters(self, *, hours: int, now: datetime | None = None) -> int:
+        cutoff = (now or datetime.now(UTC)) - timedelta(hours=hours)
+        last_value = func.max(EnergyMeasurement.value_time)
+        sub = (
+            select(Meter.m_id)
+            .join(
+                EnergyMeasurement,
+                EnergyMeasurement.serial_number == Meter.serial_number,
+                isouter=True,
+            )
+            .group_by(Meter.m_id)
+            .having(last_value.is_(None) | (last_value < cutoff))
+            .subquery()
+        )
+        return self.session.exec(select(func.count()).select_from(sub)).one()

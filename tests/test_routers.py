@@ -5,13 +5,9 @@ from sqlmodel import Session
 
 from meterapi.models import (
     Complex,
-    Connection,
-    EnergyMeasurement,
-    InstallationLocation,
     Meter,
     MeterCommunicationProtocol,
     MeterInstallation,
-    Room,
 )
 from tests._seed import seed_minimal
 
@@ -24,39 +20,46 @@ def test_health_ok(client: TestClient) -> None:
     assert r.json() == {"status": "ok"}
 
 
-# ---------- /complexes ----------
+# ---------- /v1/complexes ----------
 
 def test_list_complexes_empty(client: TestClient) -> None:
-    r = client.get("/complexes")
+    r = client.get("/v1/complexes")
     assert r.status_code == 200
-    assert r.json() == []
+    body = r.json()
+    assert body["items"] == []
+    assert body == {"items": [], "total": 0, "limit": 100, "offset": 0}
 
 
 def test_list_complexes_paginated(client: TestClient, session: Session) -> None:
     for i in (1, 2, 3):
         session.add(Complex(c_id=i, due_date="2026-01-01", name=f"C{i}"))
     session.commit()
-    r = client.get("/complexes", params={"limit": 2})
+    r = client.get("/v1/complexes", params={"limit": 2})
     assert r.status_code == 200
     body = r.json()
-    assert [c["c_id"] for c in body] == [1, 2]
+    assert [c["id"] for c in body["items"]] == [1, 2]
+    assert body["total"] == 3
+    assert body["limit"] == 2 and body["offset"] == 0
 
 
 def test_list_complexes_limit_too_large(client: TestClient) -> None:
-    assert client.get("/complexes", params={"limit": 1000}).status_code == 422
+    assert client.get("/v1/complexes", params={"limit": 1000}).status_code == 422
 
 
 def test_complex_connections_404(client: TestClient) -> None:
-    r = client.get("/complexes/999/connections")
+    r = client.get("/v1/complexes/999/connections")
     assert r.status_code == 404
     assert r.json() == {"detail": "complex 999 not found"}
 
 
 def test_complex_connections_happy(client: TestClient, session: Session) -> None:
     seed_minimal(session)
-    r = client.get("/complexes/1/connections")
+    r = client.get("/v1/complexes/1/connections")
     assert r.status_code == 200
-    assert [c["c_id"] for c in r.json()] == [10]
+    body = r.json()
+    assert [c["id"] for c in body["items"]] == [10]
+    assert body["items"][0]["complexId"] == 1
+    assert body["total"] == 1
 
 
 def test_complex_meters_excludes_decommissioned(
@@ -73,41 +76,46 @@ def test_complex_meters_excludes_decommissioned(
         removal_time=dt.datetime(2026, 1, 1),
     ))
     session.commit()
-    r = client.get("/complexes/1/meters")
+    r = client.get("/v1/complexes/1/meters")
     assert r.status_code == 200
-    assert {m["m_id"] for m in r.json()} == {5}
+    body = r.json()
+    assert {m["id"] for m in body["items"]} == {5}
+    assert body["total"] == 1
 
 
-# ---------- /connections/{c_id}/rooms ----------
+# ---------- /v1/connections/{connection_id}/rooms ----------
 
 def test_connection_rooms_404(client: TestClient) -> None:
-    r = client.get("/connections/999/rooms")
+    r = client.get("/v1/connections/999/rooms")
     assert r.status_code == 404
 
 
 def test_connection_rooms_happy(client: TestClient, session: Session) -> None:
     seed_minimal(session)
-    r = client.get("/connections/10/rooms")
+    r = client.get("/v1/connections/10/rooms")
     assert r.status_code == 200
-    assert [room["r_id"] for room in r.json()] == [100]
+    body = r.json()
+    assert [room["id"] for room in body["items"]] == [100]
+    assert body["items"][0]["connectionId"] == 10
 
 
-# ---------- /meters ----------
+# ---------- /v1/meters ----------
 
 def test_meter_detail_404(client: TestClient) -> None:
-    r = client.get("/meters/unknown")
+    r = client.get("/v1/meters/unknown")
     assert r.status_code == 404
 
 
 def test_meter_detail_happy(client: TestClient, session: Session) -> None:
     seed_minimal(session)
-    r = client.get("/meters/SN-A")
+    r = client.get("/v1/meters/SN-A")
     assert r.status_code == 200
     body = r.json()
-    assert body["serial_number"] == "SN-A"
-    assert body["installation_location"] == "WKV"
-    assert body["room"] == "kitchen_1"
-    assert body["last_reading"]["value"] == 12.5
+    assert body["serialNumber"] == "SN-A"
+    assert body["installationGoal"] == "WKV"
+    assert body["roomLabel"] == "kitchen_1"
+    assert body["lastReading"]["value"] == 12.5
+    assert body["lastReading"]["measurementType"] == "energy"
 
 
 def test_meters_stale_default_24h(client: TestClient, session: Session) -> None:
@@ -117,35 +125,50 @@ def test_meters_stale_default_24h(client: TestClient, session: Session) -> None:
         communication_protocol=MeterCommunicationProtocol.LORA,
     ))
     session.commit()
-    r = client.get("/meters/stale")
+    r = client.get("/v1/meters/stale")
     assert r.status_code == 200
-    assert [m["serial_number"] for m in r.json()] == ["SN-NONE"]
+    body = r.json()
+    assert [m["serialNumber"] for m in body["items"]] == ["SN-NONE"]
+    assert body["total"] == 1
 
 
 def test_meters_stale_zero_hours_rejected(client: TestClient) -> None:
-    assert client.get("/meters/stale", params={"hours": 0}).status_code == 422
+    assert client.get("/v1/meters/stale", params={"hours": 0}).status_code == 422
 
 
-# ---------- /measurements ----------
+def test_meters_stale_hours_over_cap_rejected(client: TestClient) -> None:
+    assert client.get("/v1/meters/stale", params={"hours": 9000}).status_code == 422
+
+
+# ---------- /v1/measurements ----------
 
 def test_measurements_list_default_window(
     client: TestClient, session: Session,
 ) -> None:
     seed_minimal(session)
-    # Default from/to covers last 7 days; seed_minimal value_time is 2026-05-25.
-    # Using a date inside the window via 'to' to make this deterministic.
-    r = client.get("/measurements", params={
-        "serial": "SN-A",
+    r = client.get("/v1/measurements", params={
+        "serial_number": "SN-A",
         "from": "2026-05-01T00:00:00",
         "to": "2026-06-01T00:00:00",
     })
     assert r.status_code == 200
-    assert [m["energy_measurement_id"] for m in r.json()] == [1]
+    body = r.json()
+    assert [m["energyMeasurementId"] for m in body["items"]] == [1]
+    assert body["total"] == 1
+
+
+def test_measurements_unknown_meter_404(client: TestClient) -> None:
+    r = client.get("/v1/measurements", params={
+        "serial_number": "nope",
+        "from": "2026-05-01T00:00:00",
+        "to": "2026-06-01T00:00:00",
+    })
+    assert r.status_code == 404
 
 
 def test_measurements_from_after_to_400(client: TestClient) -> None:
-    r = client.get("/measurements", params={
-        "serial": "x",
+    r = client.get("/v1/measurements", params={
+        "serial_number": "x",
         "from": "2026-06-01T00:00:00",
         "to": "2026-05-01T00:00:00",
     })
@@ -153,29 +176,29 @@ def test_measurements_from_after_to_400(client: TestClient) -> None:
 
 
 def test_measurements_aggregate_missing_grain_422(client: TestClient) -> None:
-    assert client.get("/measurements/aggregate", params={"serial": "x"}).status_code == 422
-
-
-def test_measurements_aggregate_invalid_grain_422(client: TestClient) -> None:
-    r = client.get("/measurements/aggregate", params={"serial": "x", "grain": "year"})
+    r = client.get("/v1/measurements/aggregate", params={"serial_number": "x"})
     assert r.status_code == 422
 
 
-# ---------- Legacy removal ----------
+def test_measurements_aggregate_invalid_grain_422(client: TestClient) -> None:
+    r = client.get(
+        "/v1/measurements/aggregate", params={"serial_number": "x", "grain": "year"}
+    )
+    assert r.status_code == 422
 
-def test_legacy_last_values_gone(client: TestClient) -> None:
-    assert client.get("/meters/last-values").status_code == 404
 
+# ---------- OpenAPI surface ----------
 
-def test_openapi_lists_new_endpoints(client: TestClient) -> None:
+def test_openapi_lists_endpoints(client: TestClient) -> None:
     spec = client.get("/openapi.json").json()
     paths = spec["paths"].keys()
     assert "/health" in paths
-    assert "/complexes" in paths
-    assert "/complexes/{c_id}/connections" in paths
-    assert "/complexes/{c_id}/meters" in paths
-    assert "/connections/{c_id}/rooms" in paths
-    assert "/meters/{serial}" in paths
-    assert "/meters/stale" in paths
-    assert "/measurements" in paths
-    assert "/measurements/aggregate" in paths
+    assert "/ready" in paths
+    assert "/v1/complexes" in paths
+    assert "/v1/complexes/{complex_id}/connections" in paths
+    assert "/v1/complexes/{complex_id}/meters" in paths
+    assert "/v1/connections/{connection_id}/rooms" in paths
+    assert "/v1/meters/{serial_number}" in paths
+    assert "/v1/meters/stale" in paths
+    assert "/v1/measurements" in paths
+    assert "/v1/measurements/aggregate" in paths

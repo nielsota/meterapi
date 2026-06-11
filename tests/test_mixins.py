@@ -216,6 +216,62 @@ def test_aggregate_measurements_rejects_bad_grain(session: Session) -> None:
         )
 
 
+def test_count_measurements_matches_filter(session: Session) -> None:
+    seed_minimal(session)
+    session.add(EnergyMeasurement(
+        energy_measurement_id=2, serial_number="SN-A", measurement_type="water",
+        value=1.0, value_time=dt.datetime(2026, 5, 26),
+    ))
+    session.commit()
+    repo = Repository(session)
+    total = repo.count_measurements(
+        serial="SN-A", from_=dt.datetime(2026, 5, 1), to=dt.datetime(2026, 6, 1),
+        measurement_type=None,
+    )
+    typed = repo.count_measurements(
+        serial="SN-A", from_=dt.datetime(2026, 5, 1), to=dt.datetime(2026, 6, 1),
+        measurement_type="water",
+    )
+    assert total == 2
+    assert typed == 1
+
+
+# ---------- Counts ----------
+
+def test_count_complexes(session: Session) -> None:
+    for i in (1, 2, 3):
+        session.add(Complex(c_id=i, due_date="2026-01-01"))
+    session.commit()
+    assert Repository(session).count_complexes() == 3
+
+
+def test_count_connections_for_complex(session: Session) -> None:
+    seed_minimal(session)
+    assert Repository(session).count_connections_for_complex(1) == 1
+    assert Repository(session).count_connections_for_complex(999) == 0
+
+
+def test_count_rooms_for_connection(session: Session) -> None:
+    seed_minimal(session)
+    session.add(Room(r_id=101, connection_id=10, name="bath", number_of_room=2))
+    session.commit()
+    assert Repository(session).count_rooms_for_connection(10) == 2
+
+
+def test_count_meters_for_complex_excludes_decommissioned(session: Session) -> None:
+    seed_minimal(session)
+    session.add(Meter(
+        m_id=6, serial_number="SN-OLD",
+        communication_protocol=MeterCommunicationProtocol.WMBUS,
+    ))
+    session.add(MeterInstallation(
+        mi_id=50001, meter_id=6, installation_location_id=1000,
+        placement_time=dt.datetime(2025, 1, 1), removal_time=dt.datetime(2026, 1, 1),
+    ))
+    session.commit()
+    assert Repository(session).count_meters_for_complex(1) == 1
+
+
 @pytest.mark.postgres
 def test_aggregate_measurements_buckets_by_day(session: Session) -> None:
     if not is_postgres(session):
